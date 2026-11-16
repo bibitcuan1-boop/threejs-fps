@@ -31,7 +31,10 @@ export function startRound(G) {
   p.yaw = 0; p.pitch = 0;
   p.hp = 100; p.alive = true; p.planting = 0; p.defusing = 0;
   p.armor = p.armorKept ? p.armor : 0;
-  if (!p.weapons.rifle) giveWeapon(p, 'pistol');
+  // The rifle is the standard loadout: every round starts with it (the
+  // pistol stays the sidearm). Buying is for the SMG, shotgun, grenades,
+  // armour and ammo top-ups.
+  if (!p.weapons.rifle) giveWeapon(p, 'rifle');
   for (const id of Object.keys(p.weapons)) {
     const w = WEAPONS[id];
     p.weapons[id].mag = w.mag;

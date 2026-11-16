@@ -120,10 +120,9 @@ function stageShot(mode) {
   } else if (mode === 'plant') {
     G.phase = 'live'; G.timer = 60;
     p.x = -14; p.z = -15; p.yaw = -0.5; p.pitch = 0.02;
-    p.planting = 2.4; // progress bar ~75% the moment the frame is taken
+    p.planting = 2.4; // progress bar ~75%; stepSim freezes it there
     stageBot(wardens[0], -8, -12, Math.PI * 0.8);
     stageBot(wardens[1], -20, -26, Math.PI * 0.6);
-    G.shotHoldE = true;
   }
   if (mode !== 'buy') {
     // A live firefight reads better with a fresh tracer in the air.
@@ -156,7 +155,6 @@ let lastStep = -1;
 function stepSim(dt) {
   G.time += dt;
   if (G.phase === 'menu' || !G.started) return;
-  if (G.shotMode === 'plant') input.keys.add('KeyE');
 
   stepBuyKeys();
   if (G.phase === 'matchEnd') {
@@ -181,6 +179,9 @@ function stepSim(dt) {
     }
     stepWeapons(G, input, dt);
     stepObjective(G, input, dt);
+    // Screenshot staging: freeze the plant bar at ~75% so the shot always
+    // shows it instead of the plant finishing before the screenshot.
+    if (G.shotMode === 'plant' && G.bomb.state === 'carried') G.player.planting = 2.4;
     stepBotObjective(G);
     for (const b of G.bots) stepBot(G, b, dt);
     updateFx(G, dt);
@@ -197,22 +198,56 @@ function stepSim(dt) {
 
 let last = performance.now();
 let acc = 0;
+let frameCount = 0;
+
+// A per-frame error must never kill the loop silently: report it into the
+// on-page box (see index.html) and keep going, so the failure is readable
+// from a screenshot alone.
+function reportErr(err) {
+  try {
+    window.__errs = window.__errs || [];
+    window.__errs.push(String((err && err.stack) || err));
+    if (window.__showErr) window.__showErr();
+  } catch { /* the reporter must never break the loop */ }
+}
+
+// Live render diagnostics, bottom-right, updated twice a second: canvas
+// size, draw calls, camera position. If the scene is blank, these say
+// whether render() runs at all.
+function updateDbg() {
+  try {
+    let d = document.getElementById('dbg');
+    if (!d) {
+      d = document.createElement('div');
+      d.id = 'dbg';
+      d.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:9998;background:rgba(0,40,40,.85);color:#bff;font:11px/1.5 monospace;padding:6px 8px;pointer-events:none;white-space:pre;';
+      document.body.appendChild(d);
+    }
+    const c = G.renderer.domElement;
+    d.textContent = `t=${G.time.toFixed(1)} phase=${G.phase} timer=${G.timer.toFixed(1)} canvas=${c.width}x${c.height} calls=${G.renderer.info.render.calls} tris=${G.renderer.info.render.triangles} cam=(${G.camera.position.x.toFixed(1)},${G.camera.position.y.toFixed(1)},${G.camera.position.z.toFixed(1)}) bots=${G.bots.length}`;
+  } catch { /* never break the loop */ }
+}
+
 function frame(now) {
   requestAnimationFrame(frame);
-  let dt = (now - last) / 1000;
-  last = now;
-  if (dt > 0.25) dt = 0.25; // tab was hidden: don't spiral
-  acc += dt;
-  let n = 0;
-  while (acc >= SIM_DT && n < 5) {
-    stepSim(SIM_DT);
-    acc -= SIM_DT;
-    n++;
-  }
-  if (n === 5) acc = 0;
-  updateBombMesh(G, bombMesh);
-  updateHud(G);
-  renderFrame(G, vm, dt);
+  try {
+    let dt = (now - last) / 1000;
+    last = now;
+    if (dt > 0.25) dt = 0.25; // tab was hidden: don't spiral
+    acc += dt;
+    let n = 0;
+    while (acc >= SIM_DT && n < 5) {
+      stepSim(SIM_DT);
+      acc -= SIM_DT;
+      n++;
+    }
+    if (n === 5) acc = 0;
+    updateBombMesh(G, bombMesh);
+    updateHud(G);
+    renderFrame(G, vm, dt);
+    // Diagnostics only with ?debug=1, so they never pollute the screenshots.
+    if (params.get('debug') && (frameCount++ % 30) === 0) updateDbg();
+  } catch (err) { reportErr(err); }
 }
 
 // Shot mode auto-starts: the browser only needs to open the URL.
