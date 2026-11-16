@@ -171,6 +171,7 @@
     <div id="scoreline">STRIKERS <b id="score">0 — 0</b> WARDENS</div>
     <div id="round">ROUND 1 / 9</div>
     <div id="objective"></div>
+    <div id="bomb"></div>
   </div>
 
   <canvas id="minimap" width="168" height="168"></canvas>
@@ -235,12 +236,19 @@
     }
     d.textContent = 'GAME ERROR:\n' + window.__errs.join('\n');
   };
+  // Cap the box: a per-frame error would otherwise grow it without bound
+  // (the same entry repeated hundreds of times). Keep the last few distinct
+  // entries so the box stays readable.
   window.addEventListener('error', function (e) {
-    window.__errs.push(String(e.message) + ' @ ' + (e.filename || '') + ':' + (e.lineno || ''));
+    var msg = String(e.message) + ' @ ' + (e.filename || '') + ':' + (e.lineno || '');
+    if (window.__errs[window.__errs.length - 1] !== msg) window.__errs.push(msg);
+    if (window.__errs.length > 5) window.__errs.shift();
     window.__showErr();
   });
   window.addEventListener('unhandledrejection', function (e) {
-    window.__errs.push('unhandled rejection: ' + e.reason);
+    var msg = 'unhandled rejection: ' + e.reason;
+    if (window.__errs[window.__errs.length - 1] !== msg) window.__errs.push(msg);
+    if (window.__errs.length > 5) window.__errs.shift();
     window.__showErr();
   });
 </script>
