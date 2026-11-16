@@ -26,6 +26,8 @@ G.lastHeard = null;
 G.banner = null;
 G.bannerT = 0;
 G.startRequested = false;
+// Best match record, so there is a reason to run it back.
+try { G.best = JSON.parse(localStorage.getItem('rustline.best') || 'null'); } catch { G.best = null; }
 
 const { renderer, scene, camera } = createRenderer(document.getElementById('game'));
 G.scene = scene;
@@ -164,9 +166,20 @@ function stepSim(dt) {
   if (G.phase === 'matchEnd') {
     if (!G.matchShown) {
       G.matchShown = true;
+      // Best match record, kept in localStorage.
+      let best = null;
+      try { best = JSON.parse(localStorage.getItem('rustline.best') || 'null'); } catch { best = null; }
+      const wins = (best?.wins || 0) + (G.winner === 'strikers' ? 1 : 0);
+      const isBest = !best || G.player.kills > best.kills;
+      const record = { kills: Math.max(best?.kills || 0, G.player.kills), wins };
+      try { localStorage.setItem('rustline.best', JSON.stringify(record)); } catch { /* private mode: no record kept */ }
+      G.best = record;
+      const bestLine = isBest
+        ? ` NEW BEST — ${G.player.kills} kills in a match!`
+        : ` Best: ${record.kills} kills · ${record.wins} match win${record.wins === 1 ? '' : 's'}.`;
       showOverlay(
         G.winner === 'strikers' ? 'Match won — the yard is yours' : 'Match lost — the wardens hold the yard',
-        `Final score ${G.score.strikers} — ${G.score.wardens}. Press M or click below to run it back.`,
+        `Final score ${G.score.strikers} — ${G.score.wardens}. You scored ${G.player.kills} kills.${bestLine} Press M or click below to run it back.`,
         'Play again');
       document.getElementById('play').onclick = () => { G.matchShown = false; startMatch(G); hideOverlay(); };
     }
@@ -250,6 +263,12 @@ function frame(now) {
     if (n === 5) acc = 0;
     updateBombMesh(G, bombMesh);
     updateHud(G);
+    // Site pads breathe so the objectives catch the eye from across the yard.
+    if (G.world.pads) {
+      const pulse = 0.18 + 0.08 * Math.sin(G.time * 2);
+      G.world.pads.A.material.opacity = pulse;
+      G.world.pads.B.material.opacity = pulse;
+    }
     renderFrame(G, vm, dt);
     // Diagnostics only with ?debug=1, so they never pollute the screenshots.
     if (params.get('debug') && (frameCount++ % 30) === 0) updateDbg();
@@ -260,8 +279,9 @@ function frame(now) {
 if (G.shotMode) {
   beginPlay();
 } else {
+  const bestLine = G.best ? ` Best: ${G.best.kills} kills · ${G.best.wins} match win${G.best.wins === 1 ? '' : 's'}.` : '';
   showOverlay('RUSTLINE — Dockyard Strike',
-    'Round-based tactical FPS. Plant the charge at site A or B, or eliminate the wardens. Buy between rounds, mind your spread, and stop to aim.',
+    `HOW TO PLAY — 1) Push site A or B with your crew. 2) Hold E at the site to plant the charge, then defend it. 3) Or eliminate all four wardens. Kills pay $300 — buy between rounds with B.${bestLine}`,
     'Click to play');
 }
 window.__game = G; // for play-testing from the browser console

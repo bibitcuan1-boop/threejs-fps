@@ -87,5 +87,5 @@ export function stepWeapons(G, input, dt) {
   G.muzzleT = 0.06;
   G.lastHeard = { x: p.x, z: p.z, t: G.time }; // bots hear the shot
   sfx.shot(p.weapon);
-  G.shake = Math.max(G.shake, 0.25);
+  G.shake = Math.max(G.shake, 0.25 + w.recoil * 4); // harder kick, bigger shake
 }

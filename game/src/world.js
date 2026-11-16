@@ -76,6 +76,25 @@ export function buildWorld(scene) {
   const padB = new THREE.Mesh(new THREE.PlaneGeometry(10, 10),
     new THREE.MeshBasicMaterial({ color: C.siteB, transparent: true, opacity: 0.22 }));
   padB.rotation.x = -Math.PI / 2; padB.position.set(16, 0.05, -20); scene.add(padB);
+
+  // Floating site letters, readable from across the yard.
+  const letterSprite = (letter, color) => {
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 128;
+    const g = c.getContext('2d');
+    g.font = 'bold 84px system-ui, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = color;
+    g.fillText(letter, 64, 68);
+    const tex = new THREE.CanvasTexture(c);
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    s.scale.set(3.2, 3.2, 1);
+    return s;
+  };
+  const letterA = letterSprite('A', '#ff9f43');
+  letterA.position.set(-16, 6.5, -20); scene.add(letterA);
+  const letterB = letterSprite('B', '#35c4b5');
+  letterB.position.set(16, 6.5, -20); scene.add(letterB);
   box(16, -27.5, 16, 6, 1, C.tealDark); // back wall
   box(8.5, -20, 1, 6, 15, C.tealDark); // west wall
   box(23.5, -20, 1, 6, 15, C.tealDark); // east wall
@@ -122,12 +141,28 @@ export function buildWorld(scene) {
     p.position.set(x, 2.25, z); scene.add(p);
   }
 
+  // Stars: cheap depth for the night sky, one static Points cloud.
+  const starGeo = new THREE.BufferGeometry();
+  const starPos = new Float32Array(220 * 3);
+  for (let i = 0; i < 220; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const e = Math.random() * 0.9 + 0.15; // elevation above the horizon
+    const r = 120;
+    starPos[i * 3] = Math.cos(a) * Math.cos(e) * r;
+    starPos[i * 3 + 1] = Math.sin(e) * r;
+    starPos[i * 3 + 2] = Math.sin(a) * Math.cos(e) * r;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xcfd8e3, size: 0.7, sizeAttenuation: false, fog: false }));
+  scene.add(stars);
+
   // Dusk lighting: low amber sun, cool sky fill, warm site lights.
+  // Bright enough that guns and enemies read clearly at a glance.
   scene.fog = new THREE.Fog(0x1a2027, 45, 95);
   scene.background = new THREE.Color(0x1a2027);
-  const hemi = new THREE.HemisphereLight(0x8fb4c7, 0x2a2118, 0.85);
+  const hemi = new THREE.HemisphereLight(0x8fb4c7, 0x2a2118, 1.05);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xffb347, 1.6);
+  const sun = new THREE.DirectionalLight(0xffb347, 1.9);
   sun.position.set(-30, 26, 18);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -135,15 +170,16 @@ export function buildWorld(scene) {
   sun.shadow.camera.top = 45; sun.shadow.camera.bottom = -45;
   sun.shadow.camera.far = 90;
   scene.add(sun);
-  const siteLightA = new THREE.PointLight(0xff9f43, 30, 22, 1.8);
+  const siteLightA = new THREE.PointLight(0xff9f43, 36, 22, 1.8);
   siteLightA.position.set(-16, 5, -20); scene.add(siteLightA);
-  const siteLightB = new THREE.PointLight(0x35c4b5, 30, 22, 1.8);
+  const siteLightB = new THREE.PointLight(0x35c4b5, 36, 22, 1.8);
   siteLightB.position.set(16, 5, -20); scene.add(siteLightB);
-  const midLight = new THREE.PointLight(0xffd27a, 18, 20, 1.8);
+  const midLight = new THREE.PointLight(0xffd27a, 22, 20, 1.8);
   midLight.position.set(0, 4.5, 0); scene.add(midLight);
 
   return {
     colliders, shootables,
+    pads: { A: padA, B: padB }, // site pads pulse in the frame loop
     sites: { A: { x: -16, z: -20 }, B: { x: 16, z: -20 } },
     spawns: {
       strikers: [[-4, 30], [0, 31], [4, 30], [0, 28]],

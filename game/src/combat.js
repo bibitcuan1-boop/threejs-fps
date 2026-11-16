@@ -4,7 +4,7 @@
 // through a container. Bots fire through the same code path with an
 // accuracy model instead of a perfect aim.
 import * as THREE from 'three';
-import { HEAD_MULT } from './state.js';
+import { HEAD_MULT, addPopup, STREAK_BONUS } from './state.js';
 import { damagePlayer } from './player.js';
 import { damageBot } from './bots.js';
 import { sfx } from './audio.js';
@@ -20,12 +20,12 @@ const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffcf6b });
 export function spawnTracer(G, from, to, color = 0xffe9a8) {
   const len = from.distanceTo(to);
   if (len < 0.5) return;
-  const m = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, len), tracerMat.clone());
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, len), tracerMat.clone());
   m.material.color.setHex(color);
   m.position.copy(from).add(to).multiplyScalar(0.5);
   m.lookAt(to);
   G.scene.add(m);
-  G.tracers.push({ mesh: m, ttl: 0.07 });
+  G.tracers.push({ mesh: m, ttl: 0.09 });
 }
 
 // Hitscan shot from `origin` along `dir` (already spread). shooter is the
@@ -60,7 +60,18 @@ export function fireHitscan(G, origin, dir, weapon, shooter) {
       spawnSparks(G, h.point, 5);
       if (shooter === G.player) {
         if (part === 'head') sfx.headshot(); else sfx.hit();
-        if (killed) { sfx.kill(); G.player.kills++; }
+        if (killed) {
+          sfx.kill();
+          G.player.kills++;
+          G.streak = (G.streak || 0) + 1;
+          G.roundKills['You'] = (G.roundKills['You'] || 0) + 1;
+          addPopup(G, `+$300  ELIMINATED ${bot.name}`);
+          if (G.streak >= 3) {
+            G.money += STREAK_BONUS;
+            addPopup(G, `STREAK x${G.streak}  +$${STREAK_BONUS}`, 'streak');
+            sfx.streak();
+          }
+        }
       }
       if (!best || part === 'head') best = { hit: part, bot, killed };
     } else {
@@ -81,7 +92,10 @@ export function botFire(G, bot, target, weapon) {
   const dist = Math.hypot(dx, dz);
   const targetMoving = target === G.player ? G.player.moving : (target.moving || false);
   let chance = 0.62 - dist * 0.009 - (targetMoving ? 0.14 : 0) - bot.heat * 0.12;
-  chance = Math.max(0.06, Math.min(0.75, chance));
+  if (bot.role === 'camp') chance += 0.08; // campers hold an angle and aim true
+  if (bot.role === 'rush') chance -= 0.05; // rushers spray on the move
+  chance += ((G.difficulty || 1) - 1) * 0.25; // wardens sharpen every round
+  chance = Math.max(0.06, Math.min(0.8, chance));
   const from = _origin.set(bot.x, bot.y + 1.45, bot.z);
   const hit = Math.random() < chance;
   const head = hit && Math.random() < 0.12;
@@ -99,7 +113,8 @@ export function botFire(G, bot, target, weapon) {
       const killed = damagePlayer(G.player, dmg);
       sfx.hurt();
       G.hudFlash = 1;
-      if (killed) G.player.deaths++;
+      G.damageFrom = { x: bot.x, z: bot.z, t: G.time };
+      if (killed) { G.player.deaths++; G.streak = 0; }
     } else {
       damageBot(G, target, dmg, bot);
     }
@@ -133,8 +148,11 @@ export function throwGrenade(G, from, dir, owner) {
   sfx.grenadePin();
 }
 
-export function explode(G, x, y, z, owner) {
-  const flash = new THREE.PointLight(0xffa040, 120, 26, 1.6);
+// Visual half of an explosion: light flash + expanding shell + shake.
+// Used on its own for the charge detonation (no damage, round already over)
+// and for the plant burst below.
+export function blastFx(G, x, y, z, color = 0xffa040, power = 120) {
+  const flash = new THREE.PointLight(color, power, 26, 1.6);
   flash.position.set(x, y + 0.5, z);
   G.scene.add(flash);
   const shell = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12),
@@ -142,8 +160,19 @@ export function explode(G, x, y, z, owner) {
   shell.position.set(x, y + 0.5, z);
   G.scene.add(shell);
   G.flashes.push({ light: flash, shell, ttl: 0.45, max: 0.45 });
-  sfx.explosion();
   G.shake = 1;
+}
+
+// Plant complete: amber spark burst at the site, no damage.
+export function plantBurst(G, x, z) {
+  spawnSparks(G, new THREE.Vector3(x, 0.6, z), 14);
+  blastFx(G, x, 0.6, z, 0xff9f43, 60);
+  sfx.plantDone();
+}
+
+export function explode(G, x, y, z, owner) {
+  blastFx(G, x, y, z);
+  sfx.explosion();
   const R = 7.5;
   for (const b of G.bots) {
     if (!b.alive || b === owner) continue;
@@ -153,8 +182,10 @@ export function explode(G, x, y, z, owner) {
   if (G.player.alive && owner !== G.player) {
     const d = Math.hypot(G.player.x - x, G.player.z - z);
     if (d < R) {
-      if (damagePlayer(G.player, 110 * (1 - d / R) + 20)) G.player.deaths++;
+      const killed = damagePlayer(G.player, 110 * (1 - d / R) + 20);
+      if (killed) { G.player.deaths++; G.streak = 0; }
       G.hudFlash = 1;
+      G.damageFrom = { x, z, t: G.time };
     }
   }
 }
@@ -164,7 +195,7 @@ export function updateFx(G, dt) {
   for (let i = G.tracers.length - 1; i >= 0; i--) {
     const t = G.tracers[i];
     t.ttl -= dt;
-    t.mesh.material.opacity = Math.max(0, t.ttl / 0.07) * 0.9;
+    t.mesh.material.opacity = Math.max(0, t.ttl / 0.09) * 0.9;
     if (t.ttl <= 0) { G.scene.remove(t.mesh); t.mesh.geometry.dispose(); t.mesh.material.dispose(); G.tracers.splice(i, 1); }
   }
   for (let i = G.flashes.length - 1; i >= 0; i--) {

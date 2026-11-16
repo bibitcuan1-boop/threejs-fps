@@ -27,6 +27,8 @@ export const KILL_REWARD = 300;
 export const WIN_REWARD = 3250;
 export const LOSS_REWARD = 1900;
 export const PLANT_REWARD = 300;
+export const DEFUSE_REWARD = 300;
+export const STREAK_BONUS = 150; // paid from the 3rd kill in a streak, then each kill after
 
 // Bot names. Original characters, two crews fighting over a dockyard.
 export const STRIKER_NAMES = ['Marlow', 'Kestrel', 'Bishop'];
@@ -48,12 +50,27 @@ export function createState() {
     grenades: [], // live grenade projectiles
     particles: [], // impact sparks, one pooled array
     kills: [], // killfeed entries {text, t}
+    popups: [], // floating reward toasts {text, kind, t}
+    roundKills: {}, // kills per name this round, for the MVP summary
+    roundSummary: null, // {winner, reason, mvp, mvpKills, playerKills, ...} shown at round end
+    difficulty: 1, // ramps each round: wardens get faster and sharper
+    damageFrom: null, // {x, z, t} of the last hit on the player, for the direction indicator
+    streak: 0, // player kills since last death
+    hintUntil: 0, // show the control hint bar until this sim time
+    best: null, // best match record {kills, wins} loaded from localStorage
     events: [], // timed callbacks the sim drains, e.g. delayed bot actions
     time: 0, // sim time, seconds
     shotMode: null, // ?shot= staging for screenshots, null in normal play
     started: false,
     winner: null,
   };
+}
+
+// Floating reward toast, e.g. "+$300  ELIMINATED Varga". The HUD paints
+// these near the crosshair and they fade after ~1.2s.
+export function addPopup(G, text, kind = 'money') {
+  G.popups.push({ text, kind, t: G.time });
+  if (G.popups.length > 6) G.popups.shift();
 }
 
 // Waypoint routes through the dockyard. Two lanes to each site plus a mid

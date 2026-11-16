@@ -55,6 +55,7 @@ export function createBot(G, name, team, spawn, weaponId, route) {
     name, team, weapon: weaponId,
     x: spawn[0], z: spawn[1], y: 0, yaw: team === 'strikers' ? 0 : Math.PI,
     hp: 100, alive: true, moving: false,
+    role: 'roam', // roam | rush | guard | camp — assigned per round in rounds.js
     route: route.slice(), wp: 0,
     state: 'route', target: null, targetSeen: 0,
     lastShot: -9, heat: 0, burstLeft: 0, burstAt: 0,
@@ -80,6 +81,7 @@ export function damageBot(G, bot, dmg, attacker) {
     G.hitMeshes = G.hitMeshes.filter((m) => m.userData.bot !== bot);
     const who = attacker === G.player ? 'You' : (attacker ? attacker.name : '—');
     G.kills.push({ text: `${who}  ▸  ${bot.name}`, t: G.time });
+    if (attacker && attacker.name) G.roundKills[attacker.name] = (G.roundKills[attacker.name] || 0) + 1;
     if (attacker === G.player) G.money += 300;
     return true;
   }
@@ -153,8 +155,9 @@ function think(G, bot) {
   if (bot.team === 'strikers' && G.bomb.state === 'carried' && bot.wp >= bot.route.length) {
     bot.state = 'plant'; return; // at the site: plant the charge
   }
-  if (bot.team === 'wardens' && G.lastHeard && G.time - G.lastHeard.t < 4) {
-    bot.state = 'investigate'; return; // heard shots: push toward the sound
+  if (bot.team === 'wardens' && G.lastHeard && G.time - G.lastHeard.t < 4
+    && bot.role !== 'guard' && bot.role !== 'camp') {
+    bot.state = 'investigate'; return; // heard shots: push toward the sound (roamers/rushers only)
   }
   if (bot.team === 'wardens' && bot.wp >= bot.route.length) { bot.state = 'hold'; return; }
   bot.state = 'route';
@@ -167,7 +170,8 @@ export function stepBot(G, bot, dt) {
   bot.thinkAt -= dt;
   if (bot.thinkAt <= 0) { bot.thinkAt = 0.15 + Math.random() * 0.05; think(G, bot); }
   bot.moving = false;
-  const speed = 3.4 + bot.skill * 0.7;
+  // Roles change the pace: rushers sprint in, campers barely move.
+  const speed = (3.4 + bot.skill * 0.7) * (bot.role === 'rush' ? 1.15 : bot.role === 'camp' ? 0.9 : 1);
 
   if (bot.state === 'engage' && bot.target && bot.target.alive !== false) {
     const t = bot.target;
@@ -180,7 +184,7 @@ export function stepBot(G, bot, dt) {
     const px = -fz * strafeDir, pz = fx * strafeDir;
     let mx = px * 1.6, mz = pz * 1.6;
     if (dist > 22) { mx += fx * 2.2; mz += fz * 2.2; }
-    else if (dist < 6) { mx -= fx * 1.6; mz -= fz * 1.6; }
+    else if (dist < (bot.role === 'rush' ? 3 : 6)) { mx -= fx * 1.6; mz -= fz * 1.6; }
     bot.x += mx * dt;
     [bot.x, bot.z] = collideCircle(G.world.colliders, bot.x, bot.z, 0.42, bot.y);
     bot.z += mz * dt;

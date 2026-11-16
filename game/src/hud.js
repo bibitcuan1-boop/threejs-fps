@@ -36,6 +36,10 @@ export function initHud(G, onBuy, onCloseBuy) {
     buyMoney: document.getElementById('buy-money'),
     buyMsg: document.getElementById('buy-msg'),
     hint: document.getElementById('hint'),
+    popups: document.getElementById('popups'),
+    dmgdir: document.getElementById('dmgdir'),
+    summary: document.getElementById('summary'),
+    keysHint: document.getElementById('keys-hint'),
   };
   minimap = document.getElementById('minimap');
   els.buy.querySelectorAll('[data-buy]').forEach((btn) => {
@@ -82,7 +86,24 @@ function fmtTime(s) {
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 }
 
+// Floating reward toasts near the crosshair: each popup object is painted
+// once, then removed after its fade.
+const shownPopups = new Set();
+function renderPopups(G) {
+  if (!els.popups) return;
+  for (const p of G.popups) {
+    if (shownPopups.has(p)) continue;
+    shownPopups.add(p);
+    const div = document.createElement('div');
+    div.className = 'popup ' + p.kind;
+    div.textContent = p.text;
+    els.popups.appendChild(div);
+    setTimeout(() => { div.remove(); shownPopups.delete(p); }, 1400);
+  }
+}
+
 let lastKillCount = 0;
+let lastSummary = null;
 export function updateHud(G) {
   if (!els) return;
   const p = G.player;
@@ -106,17 +127,52 @@ export function updateHud(G) {
   els.bomb.textContent = G.bomb.state === 'planted' ? '●' : G.bomb.state === 'carried' ? '○' : '';
   els.bomb.className = G.bomb.state === 'planted' ? 'planted' : '';
 
-  // Crosshair gap grows with spread; hitmarker flashes on a hit.
+  // Crosshair gap grows with spread; hitmarker flashes on a hit, and a
+  // kill holds a bigger red marker for a beat longer.
   const gap = 4 + p.spread * 900;
   els.crosshair.style.setProperty('--gap', `${Math.min(26, gap).toFixed(1)}px`);
-  if (G.lastHit && G.time - G.lastHit.t < 0.18) {
-    els.hitmarker.classList.add('on');
+  if (G.lastHit) {
+    const dtHit = G.time - G.lastHit.t;
+    const dur = G.lastHit.killed ? 0.35 : 0.18;
+    els.hitmarker.classList.toggle('on', dtHit < dur);
     els.hitmarker.classList.toggle('head', G.lastHit.part === 'head');
+    els.hitmarker.classList.toggle('kill', !!G.lastHit.killed && dtHit < dur);
   } else els.hitmarker.classList.remove('on');
 
   // Damage vignette fades after a hit.
   G.hudFlash = Math.max(0, (G.hudFlash || 0) - 0.03);
   els.vignette.style.opacity = G.hudFlash.toFixed(2);
+
+  // Damage direction: a red arc on a ring around the crosshair, rotated to
+  // point at whoever just shot you. Fades in under a second.
+  if (G.damageFrom && G.time - G.damageFrom.t < 0.9) {
+    const dx = G.damageFrom.x - p.x, dz = G.damageFrom.z - p.z;
+    const ang = Math.atan2(-dx, -dz); // world yaw of the attacker
+    const rel = ang - p.yaw;
+    els.dmgdir.style.transform = `translate(-50%,-50%) rotate(${(-rel).toFixed(2)}rad)`;
+    els.dmgdir.style.opacity = (1 - (G.time - G.damageFrom.t) / 0.9).toFixed(2);
+    els.dmgdir.hidden = false;
+  } else els.dmgdir.hidden = true;
+
+  // Reward toasts.
+  renderPopups(G);
+
+  // Round summary panel during the round-end pause.
+  if (G.phase === 'roundEnd' && G.roundSummary && G.roundSummary !== lastSummary) {
+    lastSummary = G.roundSummary;
+    const s = G.roundSummary;
+    els.summary.innerHTML = `<b>${s.winner === 'strikers' ? 'ROUND WON' : 'ROUND LOST'}</b> — ${s.reason}<br>` +
+      `★ MVP: ${s.mvp} (${s.mvpKills} kill${s.mvpKills === 1 ? '' : 's'}) &nbsp;·&nbsp; You: ${s.playerKills} kill${s.playerKills === 1 ? '' : 's'}<br>` +
+      `Money: $${s.money} — buy up for round ${Math.min(s.round + 1, 9)}`;
+    els.summary.hidden = false;
+  } else if (G.phase !== 'roundEnd') {
+    lastSummary = null;
+    els.summary.hidden = true;
+  }
+
+  // Control hint bar for the first seconds of a match.
+  els.keysHint.hidden = !(G.hintUntil && G.time < G.hintUntil
+    && (G.phase === 'buy' || G.phase === 'live') && !G.shotMode);
 
   // Banner: big centre text for a few seconds after round events.
   if (G.banner && G.bannerT > 0) {
