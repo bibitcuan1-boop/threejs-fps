@@ -113,6 +113,14 @@ export function renderFrame(G, vm, dt) {
   vm.group.position.y = -0.32 - (p.crouch ? 0.04 : 0) + bobY;
   vm.group.position.z = -0.55 + p.recoil * 2.2;
   vm.group.rotation.x = p.recoil * 3;
+  // Reload dip: the gun drops and tilts mid-reload so the motion reads.
+  if (p.reloading) {
+    const w = WEAPONS[p.weapon];
+    const k = 1 - Math.max(0, (p.reloadUntil - G.time)) / w.reload;
+    const dip = Math.sin(Math.min(1, Math.max(0, k)) * Math.PI) * 0.09;
+    vm.group.position.y -= dip;
+    vm.group.rotation.x += dip * 1.5;
+  }
   if (G.muzzleT > 0) {
     G.muzzleT -= dt;
     vm.flashLight.intensity = 14;

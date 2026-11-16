@@ -3,16 +3,26 @@
 // results pay here. The buy menu is DOM (hud.js); this module only decides
 // what can be bought and applies it.
 import { BUY_TIME, ROUND_TIME, BOMB_TIME, WIN_ROUNDS, MAX_ROUNDS, PLANT_TIME, DEFUSE_TIME,
-  WEAPONS, GRENADE_PRICE, ARMOR_PRICE, WIN_REWARD, LOSS_REWARD, PLANT_REWARD } from './state.js';
+  WEAPONS, GRENADE_PRICE, ARMOR_PRICE, WIN_REWARD, LOSS_REWARD, PLANT_REWARD, DEFUSE_REWARD,
+  addPopup } from './state.js';
 import { giveWeapon } from './player.js';
 import { createBot } from './bots.js';
 import { STRIKER_NAMES, WARDEN_NAMES, ROUTES } from './state.js';
+import { plantBurst, blastFx } from './combat.js';
 import { sfx } from './audio.js';
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
 
 export function startMatch(G) {
   G.score = { strikers: 0, wardens: 0 };
   G.round = 1;
   G.money = 800;
+  G.streak = 0; // kill streak resets with the match, not the round
+  G.hintUntil = G.time + 25; // control hint bar for the first 25 seconds
   G.player.kills = 0; G.player.deaths = 0;
   startRound(G);
 }
@@ -26,7 +36,10 @@ export function startRound(G) {
   G.grenades = [];
   G.bomb = { state: 'carried', site: null, x: 0, z: 0, fuse: 0, planter: null, defusedBy: null, plantedBy: null };
   const p = G.player;
-  p.x = G.world.spawns.strikers[0][0]; p.z = G.world.spawns.strikers[0][1];
+  // Spawn variety: shuffle the striker spawns each round so no two rounds
+  // open the same way — the player gets a random one too.
+  const strikerSpawns = shuffle(G.world.spawns.strikers);
+  p.x = strikerSpawns[0][0]; p.z = strikerSpawns[0][1];
   p.y = 0; p.vy = 0; p.vx = 0; p.vz = 0;
   p.yaw = 0; p.pitch = 0;
   p.hp = 100; p.alive = true; p.planting = 0; p.defusing = 0;
@@ -43,26 +56,50 @@ export function startRound(G) {
   p.weapon = p.weapons.rifle ? 'rifle' : 'pistol';
   p.grenades = p.grenadesKept || 0;
 
-  // Friendly strikers take the A lane and the B lane; wardens hold the sites.
+  // Difficulty ramps every round: wardens get faster and sharper.
+  G.difficulty = 1 + (G.round - 1) * 0.12;
+  G.roundKills = {};
+  G.roundSummary = null;
+  const pickWeapon = () => {
+    const r = Math.random();
+    return r < 0.6 ? 'rifle' : r < 0.85 ? 'smg' : 'shotgun';
+  };
+
+  // Friendly strikers split A/B; each round the routes, roles and weapons
+  // are shuffled, so the same names play differently every round.
   const routesA = [ROUTES.toA_lane, ROUTES.toA_mid];
   const routesB = [ROUTES.toB_lane, ROUTES.toB_mid];
+  const strikerRoles = shuffle(['rush', 'roam', 'roam']);
   STRIKER_NAMES.forEach((name, i) => {
-    const spawn = G.world.spawns.strikers[i + 1];
-    const route = i === 0 ? routesA[0] : (i === 1 ? routesB[0] : routesA[1]);
-    G.bots.push(createBot(G, name, 'strikers', spawn, i === 2 ? 'smg' : 'rifle', route));
+    const spawn = strikerSpawns[i + 1];
+    const pool = i === 0 ? routesA : i === 1 ? routesB : routesA.concat(routesB);
+    const route = pool[Math.floor(Math.random() * pool.length)];
+    const bot = createBot(G, name, 'strikers', spawn, pickWeapon(), route);
+    bot.role = strikerRoles[i];
+    bot.skill = Math.min(1.6, bot.skill * G.difficulty);
+    G.bots.push(bot);
   });
+  // Wardens: two site guards, one corner camper, one mid roamer — the roles
+  // shuffle between names each round.
+  const wardenRoles = shuffle(['guard', 'guard', 'camp', 'roam']);
+  const campSpots = shuffle([[-24, -26], [24, -26], [-8, -28], [8, -28]]);
   const wardenRoutes = [ROUTES.wardenA, ROUTES.wardenB, ROUTES.wardenMid, ROUTES.wardenA];
   WARDEN_NAMES.forEach((name, i) => {
     const spawn = G.world.spawns.wardens[i];
-    const bot = createBot(G, name, 'wardens', spawn, i === 3 ? 'smg' : 'rifle', wardenRoutes[i]);
-    bot.holdX = i < 2 ? (i === 0 ? -14 : 15) : 0;
-    bot.holdZ = i < 2 ? -18 : -10;
+    const bot = createBot(G, name, 'wardens', spawn, pickWeapon(), wardenRoutes[i]);
+    bot.role = wardenRoles[i];
+    bot.skill = Math.min(1.6, bot.skill * G.difficulty);
+    if (bot.role === 'guard') { bot.holdX = i % 2 === 0 ? -14 : 15; bot.holdZ = -18; }
+    else if (bot.role === 'camp') { bot.holdX = campSpots[0][0]; bot.holdZ = campSpots[0][1]; }
+    else { bot.holdX = 0; bot.holdZ = -10; }
     G.bots.push(bot);
   });
 
   G.phase = 'buy';
   G.timer = BUY_TIME;
-  G.banner = `ROUND ${G.round} — BUY PHASE`;
+  G.banner = G.round >= 3
+    ? `ROUND ${G.round} — BUY PHASE · WARDENS ARE HUNTING HARDER`
+    : `ROUND ${G.round} — BUY PHASE`;
   G.bannerT = 2.5;
   G.lastHeard = null;
 }
@@ -110,6 +147,17 @@ export function endRound(G, winner, reason) {
   G.phase = 'roundEnd';
   G.timer = 4;
   G.roundEndWinner = winner;
+  // Round summary: MVP is whoever scored most this round.
+  let mvp = 'You', mvpKills = G.roundKills['You'] || 0;
+  for (const [name, k] of Object.entries(G.roundKills)) {
+    if (k > mvpKills) { mvp = name; mvpKills = k; }
+  }
+  G.roundSummary = {
+    winner, reason, mvp, mvpKills,
+    playerKills: G.roundKills['You'] || 0,
+    money: G.money, round: G.round,
+  };
+  addPopup(G, `+$${won ? WIN_REWARD : LOSS_REWARD}  ROUND ${won ? 'WON' : 'LOST'}`, 'info');
   if (won) sfx.roundWin(); else sfx.roundLose();
   G.kills.push({ text: G.banner, t: G.time });
 }
@@ -124,6 +172,7 @@ export function checkRoundEnd(G) {
     return endRound(G, 'strikers', 'All wardens eliminated.');
   }
   if (G.bomb.state === 'planted' && G.bomb.fuse <= 0) {
+    blastFx(G, G.bomb.x, 0.5, G.bomb.z); // the charge goes off as the round ends
     return endRound(G, 'strikers', 'The charge detonated at the site.');
   }
   if (G.bomb.defusedBy) return endRound(G, 'wardens', `${G.bomb.defusedBy.name} defused the charge.`);
@@ -153,7 +202,8 @@ export function stepObjective(G, input, dt) {
       G.banner = `CHARGE PLANTED AT SITE ${site} — DEFEND IT`;
       G.bannerT = 3;
       p.planting = 0;
-      sfx.explosion && sfx.plantBeep();
+      addPopup(G, `+$${PLANT_REWARD}  CHARGE PLANTED`);
+      plantBurst(G, s.x, s.z);
     }
     return;
   }
@@ -165,6 +215,9 @@ export function stepObjective(G, input, dt) {
       if (Math.floor(p.defusing * 4) !== Math.floor((p.defusing - dt) * 4)) sfx.plantBeep();
       if (p.defusing >= DEFUSE_TIME) {
         G.bomb.defusedBy = p;
+        G.money += DEFUSE_REWARD;
+        addPopup(G, `+$${DEFUSE_REWARD}  CHARGE DEFUSED`);
+        sfx.defuseDone();
         p.defusing = 0;
       }
       return;
@@ -181,6 +234,7 @@ export function stepRoundTimer(G, dt) {
       G.timer = ROUND_TIME;
       G.banner = 'GO — PLANT THE CHARGE AT A OR B';
       G.bannerT = 2.5;
+      sfx.roundStart();
     }
   } else if (G.phase === 'live') {
     if (G.bomb.state === 'planted') {
@@ -216,6 +270,7 @@ export function stepBotObjective(G) {
     G.bomb = { state: 'planted', site, x: s.x, z: s.z, fuse: BOMB_TIME, planter: bot, defusedBy: null, plantedBy: null };
     G.banner = `${bot.name} PLANTED THE CHARGE AT SITE ${site}`;
     G.bannerT = 3;
+    plantBurst(G, s.x, s.z);
   }
   if (G.bomb.defusedBy && G.bomb.defusedBy !== G.player) {
     // handled by checkRoundEnd via bomb.defusedBy
