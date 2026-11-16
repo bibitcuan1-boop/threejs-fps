@@ -50,6 +50,8 @@
   #hitmarker { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; }
   #hitmarker.on { opacity: 1; }
   #hitmarker.head i { background: var(--danger); }
+  #hitmarker.kill { transform: translate(-50%, -50%) rotate(45deg) scale(1.35); }
+  #hitmarker.kill i { background: var(--danger); }
   #hitmarker i { position: absolute; background: var(--accent); }
   #hitmarker i:nth-child(1) { left: 12px; top: 0; width: 2px; height: 8px; }
   #hitmarker i:nth-child(2) { left: 12px; bottom: 0; width: 2px; height: 8px; }
@@ -100,6 +102,28 @@
   #progress-label { font-size: 13px; letter-spacing: .14em; margin-bottom: 6px; }
   #progress-bar { height: 6px; background: var(--hairline); border-radius: 3px; overflow: hidden; }
   #progress-fill { height: 100%; width: 0; background: var(--accent); }
+
+  /* Reward toasts: rise and fade just below the crosshair. */
+  #popups { position: fixed; left: 50%; top: 56%; transform: translateX(-50%); display: grid; gap: 4px; justify-items: center; pointer-events: none; }
+  .popup { font-family: var(--font-readout); font-size: 15px; color: var(--accent); text-shadow: 0 1px 6px #000; animation: popup-rise 1.4s ease-out forwards; white-space: nowrap; }
+  .popup.streak { color: var(--teal); font-size: 17px; }
+  .popup.info { color: var(--ink); }
+  @keyframes popup-rise { 0% { opacity: 0; transform: translateY(8px); } 15% { opacity: 1; transform: translateY(0); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-14px); } }
+
+  /* Damage direction: a red arc on a ring around the crosshair, rotated
+     from JS to point at whoever just shot you. */
+  #dmgdir { position: fixed; left: 50%; top: 50%; width: 220px; height: 220px; border-radius: 50%; border: 4px solid transparent; border-top-color: var(--danger); pointer-events: none; }
+  #dmgdir[hidden] { display: none; }
+
+  /* Round summary panel during the round-end pause. */
+  #summary { position: fixed; left: 50%; top: 38%; transform: translateX(-50%); text-align: center; font-size: 15px; line-height: 1.7; background: rgba(20,24,28,.85); border: 1px solid var(--hairline); border-radius: var(--radius-control); padding: 12px 20px; white-space: nowrap; }
+  #summary[hidden] { display: none; }
+  #summary b { color: var(--accent); }
+
+  /* First-seconds control hint. */
+  #keys-hint { position: fixed; left: 50%; bottom: 12%; transform: translateX(-50%); font-size: 13px; color: var(--muted); background: rgba(20,24,28,.8); padding: 7px 12px; border: 1px solid var(--hairline); border-radius: var(--radius-control); white-space: nowrap; }
+  #keys-hint[hidden] { display: none; }
+  #keys-hint b { color: var(--ink); }
 
   .overlay {
     position: fixed; inset: 0; display: grid; place-items: center; padding: 24px;
@@ -186,6 +210,10 @@
 
   <div id="banner" hidden></div>
   <div id="hint" hidden></div>
+  <div id="popups"></div>
+  <div id="dmgdir" hidden></div>
+  <div id="summary" hidden></div>
+  <div id="keys-hint" hidden><b>WASD</b> move · <b>Click</b> fire · <b>R</b> reload · <b>E</b> plant / defuse · <b>B</b> buy · <b>G</b> grenade</div>
   <div id="progress" hidden>
     <div id="progress-label"></div>
     <div id="progress-bar"><div id="progress-fill"></div></div>
@@ -209,7 +237,7 @@
 <div id="overlay" class="overlay">
   <section class="panel" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
     <h1 id="overlay-title">RUSTLINE <span>— Dockyard Strike</span></h1>
-    <p id="overlay-copy">Round-based tactical FPS. Plant the charge at site A or B, or eliminate the wardens. Buy between rounds, mind your spread, and stop to aim.</p>
+    <p id="overlay-copy">HOW TO PLAY — 1) Push site A or B with your crew. 2) Hold E at the site to plant the charge, then defend it. 3) Or eliminate all four wardens. Kills pay $300 — buy between rounds with B.</p>
     <button id="play" type="button">Click to play</button>
     <ul class="keys">
       <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</li>
