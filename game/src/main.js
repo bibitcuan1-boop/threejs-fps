@@ -206,7 +206,9 @@ let frameCount = 0;
 function reportErr(err) {
   try {
     window.__errs = window.__errs || [];
-    window.__errs.push(String((err && err.stack) || err));
+    const msg = String((err && err.stack) || err);
+    if (window.__errs[window.__errs.length - 1] !== msg) window.__errs.push(msg);
+    if (window.__errs.length > 5) window.__errs.shift();
     if (window.__showErr) window.__showErr();
   } catch { /* the reporter must never break the loop */ }
 }
