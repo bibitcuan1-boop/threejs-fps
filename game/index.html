@@ -220,6 +220,30 @@
   </section>
 </div>
 
+<script>
+  // Self-reporting error trap: the game runs in browsers whose DevTools we
+  // cannot open, so any uncaught error (load-time or per-frame) is written
+  // into a visible on-page box instead of vanishing into the console.
+  window.__errs = [];
+  window.__showErr = function () {
+    var d = document.getElementById('err');
+    if (!d) {
+      d = document.createElement('div');
+      d.id = 'err';
+      d.style.cssText = 'position:fixed;left:8px;top:8px;z-index:9999;background:rgba(60,0,0,.92);color:#ffd7d7;font:12px/1.5 monospace;padding:8px 10px;max-width:92vw;white-space:pre-wrap;pointer-events:none;';
+      document.body.appendChild(d);
+    }
+    d.textContent = 'GAME ERROR:\n' + window.__errs.join('\n');
+  };
+  window.addEventListener('error', function (e) {
+    window.__errs.push(String(e.message) + ' @ ' + (e.filename || '') + ':' + (e.lineno || ''));
+    window.__showErr();
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    window.__errs.push('unhandled rejection: ' + e.reason);
+    window.__showErr();
+  });
+</script>
 <script type="importmap">
 {
   "imports": {
