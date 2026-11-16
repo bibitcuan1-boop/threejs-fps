@@ -128,6 +128,10 @@ function stageShot(mode) {
     // A live firefight reads better with a fresh tracer in the air.
     G.banner = null; G.bannerT = 0;
   }
+  // Screenshot modes are frozen tableaus: hold EVERY bot, not just the
+  // staged ones, or a free bot shoots the player mid-settle (the plant
+  // shot showed HP 0) and bots kill each other in the background.
+  for (const b of G.bots) { b.staged = true; b.route = []; b.wp = 0; }
 }
 
 function beginPlay() {

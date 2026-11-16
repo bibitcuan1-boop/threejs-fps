@@ -31,7 +31,9 @@ export function createRenderer(container) {
 // movement and kicking with recoil. No model files, no network.
 export function createViewmodel(camera) {
   const group = new THREE.Group();
-  const dark = new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.45, metalness: 0.55 });
+  // Mid-grey gunmetal with a faint emissive lift: the near-black body was
+  // invisible against the dark ground in the cover shot.
+  const dark = new THREE.MeshStandardMaterial({ color: 0x4b525a, emissive: 0x14181c, roughness: 0.5, metalness: 0.4 });
   const accent = new THREE.MeshStandardMaterial({ color: 0xd98a2b, roughness: 0.6, metalness: 0.2 });
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.13, 0.62), dark);
   const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.34), dark);
